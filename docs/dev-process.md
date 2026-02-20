@@ -30,16 +30,14 @@ git checkout -b issue-5-twilio-inbound-webhook
   - Checklist (env vars, deployment notes)
 
 ## 4) Request Copilot review (required)
-Use `gh` to request review from Copilot (or Copilot review alias).
+Copilot review is part of the gate — don’t merge without it (unless we explicitly agree on a timeout rule).
 
-Example:
+Use the `gh` alias **required for this repo**:
 ```bash
 gh pr create --fill
-# then request review
-gh pr edit <pr> --add-reviewer @github-copilot
+# then request Copilot review
+gh save-me-copilot rchristman89/adams-sleep-tracker <pr_number>
 ```
-
-(If the org/user reviewer name differs, adjust accordingly.)
 
 ## 5) Address review comments (required)
 - Read each comment.
@@ -49,8 +47,16 @@ gh pr edit <pr> --add-reviewer @github-copilot
 
 No silent resolutions.
 
-## 6) Wait for CI
+## 6) Wait for CI + Copilot review
 - Do **not** merge until GitHub Actions checks are green.
+- Do **not** merge until Copilot review is posted and all comments are handled (accept/deny + rationale).
+
+### 6a) Monitoring (part of the loop)
+This repo treats “waiting” as an explicit step.
+
+Options:
+- **Manual:** check the PR page for CI + Copilot review.
+- **Autonomous (recommended):** create a short-lived watcher that checks every couple minutes and posts status until ready, then disables itself.
 
 ## 7) Merge and close the loop
 - Merge PR (squash preferred unless noted).
