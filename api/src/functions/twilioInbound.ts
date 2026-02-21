@@ -39,11 +39,14 @@ export async function twilioInbound(req: HttpRequest, ctx: InvocationContext): P
   const tz = env.TIMEZONE ?? "America/New_York";
   const authToken = env.TWILIO_AUTH_TOKEN;
   const expectedTo = env.ADAM_TO_NUMBER;
+  const storageCs = env.AZURE_STORAGE_CONNECTION_STRING;
+  const webhookUrlOverride = env.TWILIO_WEBHOOK_URL;
 
-  if (!authToken || !expectedTo) {
+  if (!authToken || !expectedTo || !storageCs) {
     ctx.error("Twilio inbound misconfigured: missing required environment variables", {
       hasAuthToken: !!authToken,
-      hasExpectedTo: !!expectedTo
+      hasExpectedTo: !!expectedTo,
+      hasStorageConnectionString: !!storageCs
     });
     return { status: 500, body: "Internal Server Error" };
   }
@@ -54,39 +57,81 @@ export async function twilioInbound(req: HttpRequest, ctx: InvocationContext): P
   const to = form.To ?? "";
   const messageSid = form.MessageSid ?? "";
 
+  const signature = req.headers.get("x-twilio-signature") ?? undefined;
+  const sig = verifyTwilioSignature({
+    twilioAuthToken: authToken,
+    signatureHeader: signature,
+    url: req.url,
+    overrideUrl: webhookUrlOverride,
+    params: form
+  });
+
+  if (!sig.ok) {
+    ctx.warn("Twilio signature validation failed", { from, to, messageSid, urlUsed: sig.urlUsed });
+    return { status: 403, body: "Forbidden" };
+  }
+
   const normalizedTo = to.trim();
   const normalizedExpectedTo = expectedTo.trim();
 
   if (!normalizedTo || normalizedTo !== normalizedExpectedTo) {
-    // Not our number / misconfiguration.
-    return { status: 403, body: "Forbidden" };
-  }
-
-  const signature = req.headers.get("x-twilio-signature") ?? undefined;
-  const okSig = verifyTwilioSignature({
-    twilioAuthToken: authToken,
-    signatureHeader: signature,
-    url: req.url,
-    params: form
-  });
-
-  if (!okSig) {
-    ctx.warn("Twilio signature validation failed", { from, to, messageSid });
+    // Not our number.
     return { status: 403, body: "Forbidden" };
   }
 
   const receivedAt = new Date();
   const receivedAtUtc = receivedAt.toISOString();
   const receivedAtLocalDate = isoDateInTimeZone(receivedAt, tz);
+  // Map reply day D (local) -> sleep "night" date D-1 (no exceptions).
+  // This is intentional: any reply received on day D is considered reporting the
+  // previous night's sleep.
   const sleepDate = addDays(receivedAtLocalDate, -1);
 
   const parsed = parseSleep(body);
 
-  const cfg = getTableStorageConfigFromEnv(env);
-  const sleepClient = getSleepEntriesClient(cfg);
-  const smsClient = getSmsEventsClient(cfg);
+  let sleepClient;
+  let smsClient;
+  try {
+    const cfg = getTableStorageConfigFromEnv(env);
+    sleepClient = getSleepEntriesClient(cfg);
+    smsClient = getSmsEventsClient(cfg);
+  } catch (err) {
+    ctx.error("Failed to initialize Table Storage clients", { err });
+    return twimlMessage("Internal error logging sleep. Try again.");
+  }
 
   if (!parsed.ok) {
+    try {
+      await insertSmsEvent(smsClient, {
+        messageSid,
+        direction: "inbound",
+        body,
+        fromNumber: from,
+        toNumber: to,
+        timestampUtc: receivedAtUtc,
+        parseStatus: "error",
+        parseError: parsed.error
+      });
+    } catch (err) {
+      // Still respond with help text even if audit logging fails.
+      ctx.error("Failed to insert inbound SmsEvent (parse error)", { err, messageSid });
+    }
+
+    return twimlMessage(`Could not parse. Reply like 7.5, 7h 30m, or 7:30. (${parsed.error})`);
+  }
+
+  try {
+    await upsertSleepEntry(sleepClient, {
+      sleepDate,
+      minutesSlept: parsed.minutes,
+      rawReply: body,
+      receivedAtUtc,
+      receivedAtLocalDate,
+      fromNumber: from,
+      messageSid,
+      updatedAtUtc: receivedAtUtc
+    });
+
     await insertSmsEvent(smsClient, {
       messageSid,
       direction: "inbound",
@@ -94,39 +139,16 @@ export async function twilioInbound(req: HttpRequest, ctx: InvocationContext): P
       fromNumber: from,
       toNumber: to,
       timestampUtc: receivedAtUtc,
-      parseStatus: "error",
-      parseError: parsed.error
+      parsedMinutes: parsed.minutes,
+      parseStatus: "ok",
+      relatedSleepDate: sleepDate
     });
-
-    return twimlMessage(
-      `Could not parse. Reply like 7.5, 7h 30m, or 7:30. (${parsed.error})`
-    );
+  } catch (err) {
+    ctx.error("Failed to persist inbound sleep entry", { err, messageSid, sleepDate });
+    return twimlMessage("Internal error logging sleep. Try again.");
   }
 
-  await upsertSleepEntry(sleepClient, {
-    sleepDate,
-    minutesSlept: parsed.minutes,
-    rawReply: body,
-    receivedAtUtc,
-    receivedAtLocalDate,
-    fromNumber: from,
-    messageSid,
-    updatedAtUtc: receivedAtUtc
-  });
-
-  await insertSmsEvent(smsClient, {
-    messageSid,
-    direction: "inbound",
-    body,
-    fromNumber: from,
-    toNumber: to,
-    timestampUtc: receivedAtUtc,
-    parsedMinutes: parsed.minutes,
-    parseStatus: "ok",
-    relatedSleepDate: sleepDate
-  });
-
-  const hours = (parsed.minutes / 60).toFixed(2).replace(/\.00$/, "");
+  const hours = parseFloat((parsed.minutes / 60).toFixed(2));
   return twimlMessage(`Logged ${hours}h for ${sleepDate}.`);
 }
 
