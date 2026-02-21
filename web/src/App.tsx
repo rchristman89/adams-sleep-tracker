@@ -130,7 +130,10 @@ function App() {
     if (!stats) return []
     return [...stats.statusHistory30]
       .filter((entry) => entry.status !== 'OK' && entry.status !== 'UNKNOWN')
-      .sort((a, b) => (a.sleepDate < b.sleepDate ? 1 : -1))
+      .sort((a, b) => {
+        if (a.sleepDate === b.sleepDate) return 0
+        return a.sleepDate < b.sleepDate ? 1 : -1
+      })
       .slice(0, MAX_INCIDENTS)
   }, [stats])
 
@@ -154,7 +157,8 @@ function App() {
 
   const maxBurn = useMemo(() => {
     const values = burnSeries.map((entry) => entry.cumulativeBurn)
-    return values.length ? Math.max(...values) : 1
+    const rawMax = values.length ? Math.max(...values) : 0
+    return Math.max(rawMax, 1)
   }, [burnSeries])
 
   const generatedAtDisplay = useMemo(() => {
@@ -280,14 +284,20 @@ function App() {
           <p className="muted">Squares represent nightly status.</p>
         </div>
         <div className="history-bar">
-          {history.map((entry) => (
-            <div
-              key={entry.sleepDate}
-              className="history-item"
-              style={{ backgroundColor: STATUS_COLORS[entry.status] }}
-              title={`${entry.sleepDate} • ${entry.status} • ${formatDuration(entry.minutesSlept)}`}
-            />
-          ))}
+          {history.map((entry) => {
+            const description = `${formatDate(entry.sleepDate)} • ${entry.status} • ${formatDuration(entry.minutesSlept)}`
+            return (
+              <div
+                key={entry.sleepDate}
+                className="history-item"
+                style={{ backgroundColor: STATUS_COLORS[entry.status] }}
+                title={description}
+                tabIndex={0}
+                role="img"
+                aria-label={description}
+              />
+            )
+          })}
         </div>
         <div className="history-legend">
           {(['OK', 'DEGRADED', 'MAJOR', 'SEV1', 'UNKNOWN'] as Status[]).map(
