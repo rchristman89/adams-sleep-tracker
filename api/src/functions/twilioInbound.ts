@@ -5,6 +5,85 @@ import { addDays, isoDateInTimeZone } from "../shared/dates";
 import { parseSleep } from "../shared/parseSleep";
 import { verifyTwilioSignature } from "../twilio/verifyTwilio";
 
+type RateLimitConfig = {
+  windowSeconds: number;
+  maxRequests: number;
+};
+
+type RateLimitResult = {
+  ok: boolean;
+  remaining: number;
+  retryAfterSeconds?: number;
+};
+
+type RateLimitBucket = {
+  timestamps: number[];
+  lastSeen: number;
+};
+
+// Best-effort per-instance rate limiting (not shared across Azure Function instances).
+const rateLimitBuckets = new Map<string, RateLimitBucket>();
+const MIN_BUCKETS_FOR_SWEEP = 200;
+const MAX_SWEEP_INTERVAL_MS = 60_000;
+const MAX_BUCKETS = 10_000;
+let lastRateLimitSweepAt = 0;
+
+function parseEnvPositiveInt(value: string | undefined, defaultValue: number): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 1) {
+    return defaultValue;
+  }
+  return Math.floor(parsed);
+}
+
+function getRateLimitConfig(env: NodeJS.ProcessEnv): RateLimitConfig {
+  const windowSeconds = parseEnvPositiveInt(env.TWILIO_RATE_LIMIT_WINDOW_SECONDS, 60);
+  const maxRequests = parseEnvPositiveInt(env.TWILIO_RATE_LIMIT_MAX, 5);
+  return { windowSeconds, maxRequests };
+}
+
+function sweepRateLimitBuckets(cutoff: number, now: number, windowMs: number) {
+  if (rateLimitBuckets.size < MIN_BUCKETS_FOR_SWEEP) return;
+  const sweepIntervalMs = Math.min(windowMs, MAX_SWEEP_INTERVAL_MS);
+  if (now - lastRateLimitSweepAt < sweepIntervalMs) return;
+  lastRateLimitSweepAt = now;
+  for (const [key, bucket] of rateLimitBuckets.entries()) {
+    if (bucket.lastSeen < cutoff) {
+      rateLimitBuckets.delete(key);
+    }
+  }
+
+  if (rateLimitBuckets.size > MAX_BUCKETS) {
+    const excess = rateLimitBuckets.size - MAX_BUCKETS;
+    const entries = Array.from(rateLimitBuckets.entries());
+    entries.sort((a, b) => a[1].lastSeen - b[1].lastSeen);
+    for (let i = 0; i < excess; i += 1) {
+      const [keyToDelete] = entries[i];
+      rateLimitBuckets.delete(keyToDelete);
+    }
+  }
+}
+
+function checkRateLimit(key: string, cfg: RateLimitConfig, now = Date.now()): RateLimitResult {
+  const windowMs = cfg.windowSeconds * 1000;
+  const cutoff = now - windowMs;
+  const bucket = rateLimitBuckets.get(key) ?? { timestamps: [], lastSeen: now };
+  const recent = bucket.timestamps.filter((ts) => ts > cutoff);
+
+  if (recent.length >= cfg.maxRequests) {
+    const oldest = recent[0];
+    const retryAfterSeconds = Math.ceil((oldest + windowMs - now) / 1000);
+    rateLimitBuckets.set(key, { timestamps: recent, lastSeen: now });
+    sweepRateLimitBuckets(cutoff, now, windowMs);
+    return { ok: false, remaining: 0, retryAfterSeconds };
+  }
+
+  recent.push(now);
+  rateLimitBuckets.set(key, { timestamps: recent, lastSeen: now });
+  sweepRateLimitBuckets(cutoff, now, windowMs);
+  return { ok: true, remaining: cfg.maxRequests - recent.length };
+}
+
 function twimlMessage(message: string, status = 200): HttpResponseInit {
   const xml = `<?xml version="1.0" encoding="UTF-8"?><Response><Message>${escapeXml(message)}</Message></Response>`;
   return {
@@ -13,6 +92,16 @@ function twimlMessage(message: string, status = 200): HttpResponseInit {
       "content-type": "text/xml"
     },
     body: xml
+  };
+}
+
+function twimlEmpty(status = 200): HttpResponseInit {
+  return {
+    status,
+    headers: {
+      "content-type": "text/xml"
+    },
+    body: "<?xml version=\"1.0\" encoding=\"UTF-8\"?><Response/>"
   };
 }
 
@@ -39,6 +128,7 @@ export async function twilioInbound(req: HttpRequest, ctx: InvocationContext): P
   const tz = env.TIMEZONE ?? "America/New_York";
   const authToken = env.TWILIO_AUTH_TOKEN;
   const expectedTo = env.ADAM_TO_NUMBER;
+  const expectedFrom = env.ADAM_FROM_NUMBER;
   const storageCs = env.AZURE_STORAGE_CONNECTION_STRING;
   const webhookUrlOverride = env.TWILIO_WEBHOOK_URL;
 
@@ -73,11 +163,45 @@ export async function twilioInbound(req: HttpRequest, ctx: InvocationContext): P
 
   const normalizedTo = to.trim();
   const normalizedExpectedTo = expectedTo.trim();
+  const normalizedExpectedFrom = expectedFrom?.trim();
 
   if (!normalizedTo || normalizedTo !== normalizedExpectedTo) {
     // Not our number.
     return { status: 403, body: "Forbidden" };
   }
+
+  const normalizedFrom = from.trim();
+  if (!normalizedFrom) {
+    ctx.warn("Twilio inbound rejected: missing from number", { messageSid });
+    return { status: 400, body: "Bad Request" };
+  }
+
+  if (normalizedExpectedFrom && normalizedFrom !== normalizedExpectedFrom) {
+    ctx.warn("Twilio inbound rejected: unexpected from number", { from: normalizedFrom, messageSid });
+    return twimlEmpty();
+  }
+
+  const rateLimit = getRateLimitConfig(env);
+  const rateKey = normalizedFrom;
+  const rate = checkRateLimit(rateKey, rateLimit);
+  if (!rate.ok) {
+    ctx.warn("Twilio inbound rate limited", {
+      messageSid,
+      from: normalizedFrom,
+      windowSeconds: rateLimit.windowSeconds,
+      maxRequests: rateLimit.maxRequests,
+      retryAfterSeconds: rate.retryAfterSeconds
+    });
+    return twimlMessage("Too many messages received. Please wait before sending another update.");
+  }
+
+  ctx.info("Twilio inbound received", {
+    messageSid,
+    from: normalizedFrom,
+    to: normalizedTo,
+    bodyLength: body.length,
+    rateRemaining: rate.remaining
+  });
 
   const receivedAt = new Date();
   const receivedAtUtc = receivedAt.toISOString();
@@ -101,6 +225,13 @@ export async function twilioInbound(req: HttpRequest, ctx: InvocationContext): P
   }
 
   if (!parsed.ok) {
+    ctx.warn("Twilio inbound parse failed", {
+      messageSid,
+      from: normalizedFrom,
+      error: parsed.error,
+      receivedAtUtc
+    });
+
     try {
       await insertSmsEvent(smsClient, {
         messageSid,
@@ -120,6 +251,13 @@ export async function twilioInbound(req: HttpRequest, ctx: InvocationContext): P
     return twimlMessage(`Could not parse. Reply like 7.5, 7h 30m, or 7:30. (${parsed.error})`);
   }
 
+  ctx.info("Twilio inbound parsed", {
+    messageSid,
+    sleepDate,
+    minutesSlept: parsed.minutes,
+    receivedAtUtc
+  });
+
   try {
     await upsertSleepEntry(sleepClient, {
       sleepDate,
@@ -135,6 +273,13 @@ export async function twilioInbound(req: HttpRequest, ctx: InvocationContext): P
     ctx.error("Failed to upsert SleepEntry", { err, messageSid, sleepDate });
     return twimlMessage("Internal error logging sleep. Try again.");
   }
+
+  ctx.info("Twilio inbound upserted", {
+    messageSid,
+    sleepDate,
+    minutesSlept: parsed.minutes,
+    receivedAtUtc
+  });
 
   // Best-effort audit logging: failure here should not cause the user to retry.
   try {
