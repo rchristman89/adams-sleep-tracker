@@ -26,9 +26,16 @@ Use this as the final cutover checklist when moving to a custom domain.
   - `https://<your-domain>/api/twilio/inbound`
 - [ ] In SWA app settings, set:
   - `TWILIO_WEBHOOK_URL=https://<your-domain>/api/twilio/inbound`
-  - (Required) `TWILIO_AUTH_TOKEN`, `ADAM_TO_NUMBER`, `TWILIO_FROM_NUMBER`
+  - (Required for inbound webhook) `TWILIO_AUTH_TOKEN`, `ADAM_TO_NUMBER`
+  - (Required for outbound SMS / scheduled jobs) `TWILIO_ACCOUNT_SID`, `TWILIO_FROM_NUMBER`
 
-## 5) Smoke tests
+## 5) Logic Apps (scheduled jobs)
+- [ ] Update Logic Apps HTTP action URIs to use the custom domain:
+  - `https://<your-domain>/api/jobs/sendPrompt`
+  - `https://<your-domain>/api/jobs/sendReminder`
+- [ ] Keep the same `x-job-secret` header value.
+
+## 6) Smoke tests
 - [ ] **Public site:** open `https://<your-domain>`
 - [ ] **Health endpoint:** `https://<your-domain>/api/health`
 - [ ] **Twilio inbound:** send an SMS to the Twilio number and confirm data updates.
@@ -41,6 +48,6 @@ Use this as the final cutover checklist when moving to a custom domain.
     -H "x-job-secret: <JOB_SECRET>"
   ```
 
-## 6) Final verification
+## 7) Final verification
 - [ ] Verify the dashboard reflects the latest SMS (date = local day - 1).
 - [ ] Confirm no signature validation errors in logs.
