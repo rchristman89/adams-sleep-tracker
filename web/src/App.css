@@ -117,13 +117,18 @@
 
 .history-bar {
   display: grid;
-  grid-template-columns: repeat(30, minmax(12px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(12px, 1fr));
   gap: 6px;
 }
 
 .history-item {
   height: 20px;
   border-radius: 4px;
+  outline: none;
+}
+
+.history-item:focus-visible {
+  box-shadow: 0 0 0 2px #0f172a, 0 0 0 4px rgba(56, 189, 248, 0.9);
 }
 
 .history-legend {

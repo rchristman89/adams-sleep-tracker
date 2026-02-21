@@ -309,6 +309,8 @@ function App() {
                   width={width}
                   height={barHeight}
                   fill={STATUS_COLORS[entry.status]}
+                  stroke="rgba(15, 23, 42, 0.65)"
+                  strokeWidth="1"
                 />
               )
             })}
