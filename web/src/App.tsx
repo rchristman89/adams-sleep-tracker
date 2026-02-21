@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { formatMinutes as formatMinutesRaw } from './shared/parseSleep'
 import './App.css'
 
 type Status = 'OK' | 'DEGRADED' | 'MAJOR' | 'SEV1' | 'UNKNOWN'
@@ -49,11 +50,14 @@ const STATUS_COLORS: Record<Status, string> = {
   UNKNOWN: '#94a3b8',
 }
 
-const formatMinutes = (minutes: number | null | undefined) => {
+const MAX_INCIDENTS = 14
+const CHART_WIDTH = 1000
+const CHART_HEIGHT = 220
+const CHART_BAR_AREA_HEIGHT = 150
+
+const formatDuration = (minutes: number | null | undefined) => {
   if (minutes === null || minutes === undefined) return '—'
-  const hours = Math.floor(minutes / 60)
-  const mins = Math.round(minutes % 60)
-  return `${hours}h ${mins}m`
+  return formatMinutesRaw(minutes)
 }
 
 const formatPct = (value: number | null | undefined) => {
@@ -62,9 +66,22 @@ const formatPct = (value: number | null | undefined) => {
 }
 
 const formatDate = (value: string) => {
-  const date = new Date(`${value}T00:00:00`)
+  const parts = value.split('-')
+  if (parts.length !== 3) return value
+  const [yearStr, monthStr, dayStr] = parts
+  const year = Number(yearStr)
+  const month = Number(monthStr)
+  const day = Number(dayStr)
+  if (Number.isNaN(year) || Number.isNaN(month) || Number.isNaN(day)) {
+    return value
+  }
+  const date = new Date(Date.UTC(year, month - 1, day))
   if (Number.isNaN(date.getTime())) return value
-  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+  return date.toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    timeZone: 'UTC',
+  })
 }
 
 function App() {
@@ -114,7 +131,7 @@ function App() {
     return [...stats.statusHistory30]
       .filter((entry) => entry.status !== 'OK' && entry.status !== 'UNKNOWN')
       .sort((a, b) => (a.sleepDate < b.sleepDate ? 1 : -1))
-      .slice(0, 14)
+      .slice(0, MAX_INCIDENTS)
   }, [stats])
 
   const history = stats?.statusHistory30 ?? []
@@ -140,6 +157,14 @@ function App() {
     return values.length ? Math.max(...values) : 1
   }, [burnSeries])
 
+  const generatedAtDisplay = useMemo(() => {
+    if (!stats) return 'Unknown'
+    const date = new Date(stats.generatedAtUtc)
+    const time = date.getTime()
+    if (Number.isNaN(time)) return 'Unknown'
+    return date.toLocaleString()
+  }, [stats])
+
   if (loading) {
     return (
       <div className="page">
@@ -159,8 +184,17 @@ function App() {
         </header>
         <div className="panel error">
           <h2>Unable to load stats</h2>
-          <p>{error ?? 'Unknown error'}</p>
-          <p>Try refreshing the page.</p>
+          <p>
+            We couldn&apos;t load the latest sleep statistics. This may be due to a
+            temporary issue with the service or a problem with your network connection.
+          </p>
+          <p>
+            Please check your internet connection and refresh this page. If the problem
+            continues, contact your administrator or support team.
+          </p>
+          {error && (
+            <p className="error-details">Technical details: {error}</p>
+          )}
         </div>
       </div>
     )
@@ -168,16 +202,18 @@ function App() {
 
   const lastNightStatus = lastNight?.status ?? 'UNKNOWN'
 
-  const chartWidth = 1000
-  const chartHeight = 220
-  const barAreaHeight = 150
-  const barWidth = history.length ? chartWidth / history.length : chartWidth
-  const burnLinePoints = history.map((entry, index) => {
-    const burn = burnByDate.get(entry.sleepDate) ?? 0
+  const barWidth = history.length ? CHART_WIDTH / history.length : CHART_WIDTH
+  const burnLinePoints = history.reduce<string[]>((points, entry, index) => {
+    const burn = burnByDate.get(entry.sleepDate)
+    if (burn == null) return points
     const x = index * barWidth + barWidth / 2
-    const y = barAreaHeight - (burn / maxBurn) * (barAreaHeight - 10) + 20
-    return `${x},${y}`
-  })
+    const y =
+      CHART_BAR_AREA_HEIGHT -
+      (burn / maxBurn) * (CHART_BAR_AREA_HEIGHT - 10) +
+      20
+    points.push(`${x},${y}`)
+    return points
+  }, [])
 
   return (
     <div className="page">
@@ -185,8 +221,7 @@ function App() {
         <div>
           <h1>Sleep Reliability Dashboard</h1>
           <p className="muted">
-            Generated {new Date(stats.generatedAtUtc).toLocaleString()} • Timezone{' '}
-            {stats.timezone}
+            Generated {generatedAtDisplay} • Timezone {stats.timezone}
           </p>
         </div>
         <div className={`status-banner status-${lastNightStatus.toLowerCase()}`}>
@@ -200,7 +235,7 @@ function App() {
           </div>
           <div>
             <span className="banner-label">Sleep</span>
-            <strong>{formatMinutes(lastNight?.minutesSlept ?? null)}</strong>
+            <strong>{formatDuration(lastNight?.minutesSlept ?? null)}</strong>
           </div>
         </div>
       </header>
@@ -209,7 +244,11 @@ function App() {
         <div className="panel">
           <span className="panel-label">Availability (7d)</span>
           <h3>{formatPct(stats.reliability7.availability)}</h3>
-          <p className="muted">Known nights: {stats.reliability7.knownNights}</p>
+          <p className="muted">
+            {stats.reliability7.knownNights === 0
+              ? 'No data available yet'
+              : `Known nights: ${stats.reliability7.knownNights}`}
+          </p>
         </div>
         <div className="panel">
           <span className="panel-label">Error budget (7d)</span>
@@ -218,15 +257,15 @@ function App() {
         </div>
         <div className="panel">
           <span className="panel-label">Averages</span>
-          <h3>{formatMinutes(stats.averages.avgMinutes7)}</h3>
+          <h3>{formatDuration(stats.averages.avgMinutes7)}</h3>
           <p className="muted">7-day average</p>
-          <p>{formatMinutes(stats.averages.avgMinutes30)} (30-day)</p>
+          <p>{formatDuration(stats.averages.avgMinutes30)} (30-day)</p>
         </div>
         <div className="panel">
           <span className="panel-label">Percentiles (30d)</span>
-          <h3>{formatMinutes(stats.percentiles30.p50Minutes)}</h3>
+          <h3>{formatDuration(stats.percentiles30.p50Minutes)}</h3>
           <p className="muted">P50 sleep duration</p>
-          <p>{formatMinutes(stats.percentiles30.p90Minutes)} (P90)</p>
+          <p>{formatDuration(stats.percentiles30.p90Minutes)} (P90)</p>
         </div>
         <div className="panel">
           <span className="panel-label">Incidents (30d)</span>
@@ -246,7 +285,7 @@ function App() {
               key={entry.sleepDate}
               className="history-item"
               style={{ backgroundColor: STATUS_COLORS[entry.status] }}
-              title={`${entry.sleepDate} • ${entry.status} • ${formatMinutes(entry.minutesSlept)}`}
+              title={`${entry.sleepDate} • ${entry.status} • ${formatDuration(entry.minutesSlept)}`}
             />
           ))}
         </div>
@@ -274,32 +313,40 @@ function App() {
         </div>
         <div className="chart">
           <svg
-            viewBox={`0 0 ${chartWidth} ${chartHeight}`}
-            preserveAspectRatio="none"
+            role="img"
+            aria-describedby="burn-chart-summary"
+            viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`}
+            preserveAspectRatio="xMidYMid meet"
           >
-            <rect x="0" y="0" width={chartWidth} height={chartHeight} fill="#0f172a" />
+            <rect
+              x="0"
+              y="0"
+              width={CHART_WIDTH}
+              height={CHART_HEIGHT}
+              fill="#0f172a"
+            />
             <line
               x1="0"
               y1="20"
-              x2={chartWidth}
+              x2={CHART_WIDTH}
               y2="20"
               stroke="#334155"
               strokeDasharray="4 6"
             />
             <line
               x1="0"
-              y1={barAreaHeight + 20}
-              x2={chartWidth}
-              y2={barAreaHeight + 20}
+              y1={CHART_BAR_AREA_HEIGHT + 20}
+              x2={CHART_WIDTH}
+              y2={CHART_BAR_AREA_HEIGHT + 20}
               stroke="#1f2937"
             />
             {history.map((entry, index) => {
               const minutes = entry.minutesSlept ?? 0
               const barHeight = maxMinutes
-                ? (minutes / maxMinutes) * barAreaHeight
+                ? (minutes / maxMinutes) * CHART_BAR_AREA_HEIGHT
                 : 0
               const x = index * barWidth + barWidth * 0.1
-              const y = barAreaHeight - barHeight + 20
+              const y = CHART_BAR_AREA_HEIGHT - barHeight + 20
               const width = barWidth * 0.8
               return (
                 <rect
@@ -321,9 +368,14 @@ function App() {
               />
             )}
           </svg>
+          <p id="burn-chart-summary" className="sr-only">
+            Bar chart of minutes slept for each day in the last 30 days, with a line
+            showing cumulative burn versus the SLO. Missing burn data is omitted from
+            the line.
+          </p>
           <div className="chart-footer">
-            <span>SLO: {formatMinutes(stats.sloMinutes)}</span>
-            <span>Max sleep: {formatMinutes(maxMinutes)}</span>
+            <span>SLO: {formatDuration(stats.sloMinutes)}</span>
+            <span>Max sleep: {formatDuration(maxMinutes)}</span>
             <span>Max burn: {maxBurn}</span>
           </div>
         </div>
@@ -331,7 +383,7 @@ function App() {
 
       <section className="panel">
         <div className="panel-header">
-          <h2>Incident log (last 14)</h2>
+          <h2>Incident log (last {MAX_INCIDENTS})</h2>
           <p className="muted">Nights below SLO or with degraded status.</p>
         </div>
         {incidentLog.length === 0 ? (
@@ -357,7 +409,7 @@ function App() {
                       {entry.status}
                     </span>
                   </td>
-                  <td>{formatMinutes(entry.minutesSlept)}</td>
+                  <td>{formatDuration(entry.minutesSlept)}</td>
                 </tr>
               ))}
             </tbody>
