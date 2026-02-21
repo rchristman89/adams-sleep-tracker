@@ -431,6 +431,12 @@ function App() {
           </table>
         )}
       </section>
+
+      <footer className="page-footer">
+        <a href="/privacy">Privacy Policy</a>
+        <span className="footer-sep">·</span>
+        <a href="/terms">Terms &amp; Conditions</a>
+      </footer>
     </div>
   )
 }

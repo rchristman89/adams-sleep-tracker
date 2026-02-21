@@ -227,3 +227,49 @@
     gap: 4px;
   }
 }
+
+.legal h2 {
+  margin-top: 24px;
+  margin-bottom: 8px;
+  font-size: 1.15rem;
+}
+
+.legal p,
+.legal ul {
+  margin: 8px 0;
+  line-height: 1.7;
+}
+
+.legal ul {
+  padding-left: 24px;
+}
+
+.legal a {
+  color: #2563eb;
+}
+
+.legal a:hover {
+  text-decoration: underline;
+}
+
+.page-footer {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+  padding: 20px 0 0;
+  font-size: 0.85rem;
+  color: rgba(15, 23, 42, 0.5);
+}
+
+.page-footer a {
+  color: rgba(15, 23, 42, 0.6);
+}
+
+.page-footer a:hover {
+  color: #0f172a;
+}
+
+.footer-sep {
+  color: rgba(15, 23, 42, 0.3);
+}
