@@ -131,7 +131,13 @@ export async function twilioInbound(req: HttpRequest, ctx: InvocationContext): P
       messageSid,
       updatedAtUtc: receivedAtUtc
     });
+  } catch (err) {
+    ctx.error("Failed to upsert SleepEntry", { err, messageSid, sleepDate });
+    return twimlMessage("Internal error logging sleep. Try again.");
+  }
 
+  // Best-effort audit logging: failure here should not cause the user to retry.
+  try {
     await insertSmsEvent(smsClient, {
       messageSid,
       direction: "inbound",
@@ -144,8 +150,7 @@ export async function twilioInbound(req: HttpRequest, ctx: InvocationContext): P
       relatedSleepDate: sleepDate
     });
   } catch (err) {
-    ctx.error("Failed to persist inbound sleep entry", { err, messageSid, sleepDate });
-    return twimlMessage("Internal error logging sleep. Try again.");
+    ctx.error("Failed to insert inbound SmsEvent (success)", { err, messageSid, sleepDate });
   }
 
   const hours = parseFloat((parsed.minutes / 60).toFixed(2));
