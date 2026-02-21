@@ -169,6 +169,24 @@ function App() {
     return date.toLocaleString()
   }, [stats])
 
+  const barWidth = history.length ? CHART_WIDTH / history.length : CHART_WIDTH
+
+  const burnLinePoints = useMemo(
+    () =>
+      history.length
+        ? history.map((entry, index) => {
+            const burn = burnByDate.get(entry.sleepDate) ?? 0
+            const x = index * barWidth + barWidth / 2
+            const y =
+              CHART_BAR_AREA_HEIGHT -
+              (burn / maxBurn) * (CHART_BAR_AREA_HEIGHT - 10) +
+              20
+            return `${x},${y}`
+          })
+        : [],
+    [history, barWidth, burnByDate, maxBurn],
+  )
+
   if (loading) {
     return (
       <div className="page">
@@ -204,24 +222,6 @@ function App() {
   }
 
   const lastNightStatus = lastNight?.status ?? 'UNKNOWN'
-
-  const barWidth = history.length ? CHART_WIDTH / history.length : CHART_WIDTH
-
-  const burnLinePoints = useMemo(
-    () =>
-      history.length
-        ? history.map((entry, index) => {
-            const burn = burnByDate.get(entry.sleepDate) ?? 0
-            const x = index * barWidth + barWidth / 2
-            const y =
-              CHART_BAR_AREA_HEIGHT -
-              (burn / maxBurn) * (CHART_BAR_AREA_HEIGHT - 10) +
-              20
-            return `${x},${y}`
-          })
-        : [],
-    [history, barWidth, burnByDate, maxBurn],
-  )
 
   return (
     <div className="page">
