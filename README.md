@@ -18,4 +18,5 @@ Public read-only “Newborn SRE Uptime” dashboard driven by a daily SMS reply.
 - See `docs/architecture.md`
 - See `docs/dev-process.md` (required workflow)
 - See `docs/setup-twilio-azure.md` (Twilio + Azure setup guide)
+- See `docs/launch-checklist.md` (custom domain + launch checklist)
 - See `infra/README.md` (Azure provisioning)
