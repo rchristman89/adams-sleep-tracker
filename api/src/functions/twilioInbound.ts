@@ -40,8 +40,13 @@ export async function twilioInbound(req: HttpRequest, ctx: InvocationContext): P
   const authToken = env.TWILIO_AUTH_TOKEN;
   const expectedTo = env.ADAM_TO_NUMBER;
 
-  if (!authToken) return { status: 500, body: "TWILIO_AUTH_TOKEN missing" };
-  if (!expectedTo) return { status: 500, body: "ADAM_TO_NUMBER missing" };
+  if (!authToken || !expectedTo) {
+    ctx.error("Twilio inbound misconfigured: missing required environment variables", {
+      hasAuthToken: !!authToken,
+      hasExpectedTo: !!expectedTo
+    });
+    return { status: 500, body: "Internal Server Error" };
+  }
 
   const form = await readForm(req);
   const body = form.Body ?? "";
@@ -49,7 +54,10 @@ export async function twilioInbound(req: HttpRequest, ctx: InvocationContext): P
   const to = form.To ?? "";
   const messageSid = form.MessageSid ?? "";
 
-  if (!to || to !== expectedTo) {
+  const normalizedTo = to.trim();
+  const normalizedExpectedTo = expectedTo.trim();
+
+  if (!normalizedTo || normalizedTo !== normalizedExpectedTo) {
     // Not our number / misconfiguration.
     return { status: 403, body: "Forbidden" };
   }

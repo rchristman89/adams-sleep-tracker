@@ -12,6 +12,11 @@ export function isoDateInTimeZone(date: Date, timeZone: string): IsoDate {
   const y = parts.find((p) => p.type === "year")?.value;
   const m = parts.find((p) => p.type === "month")?.value;
   const d = parts.find((p) => p.type === "day")?.value;
+
+  if (!y || !m || !d) {
+    throw new Error(`isoDateInTimeZone: failed to extract date parts for timeZone "${timeZone}"`);
+  }
+
   return toIsoDate(`${y}-${m}-${d}`);
 }
 
