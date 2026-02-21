@@ -172,7 +172,7 @@ export async function twilioInbound(req: HttpRequest, ctx: InvocationContext): P
   }
 
   const rateLimit = getRateLimitConfig(env);
-  const rateKey = normalizedFrom || messageSid || "unknown";
+  const rateKey = normalizedFrom;
   const rate = checkRateLimit(rateKey, rateLimit);
   if (!rate.ok) {
     ctx.warn("Twilio inbound rate limited", {
