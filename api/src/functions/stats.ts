@@ -1,19 +1,13 @@
 import { app, type HttpRequest, type HttpResponseInit, type InvocationContext } from "@azure/functions";
 
+import { json } from "./jobsShared";
+
 import { addDays, isoDateInTimeZone } from "../shared/dates";
-import { getSleepEntriesClient, getTableStorageConfigFromEnv, listSleepEntriesSince, type IsoDate } from "../storage";
+import { getSleepEntriesClient, getTableStorageConfigFromEnv, listSleepEntriesSince } from "../storage";
+import { toIsoDate, type IsoDate } from "../storage/types";
 
 type NightStatus = "OK" | "DEGRADED" | "MAJOR" | "SEV1" | "UNKNOWN";
 
-function json(status: number, body: unknown): HttpResponseInit {
-  return {
-    status,
-    headers: {
-      "content-type": "application/json"
-    },
-    body: JSON.stringify(body)
-  };
-}
 
 function avg(nums: number[]): number | null {
   if (nums.length === 0) return null;
@@ -42,6 +36,8 @@ function statusForMinutes(minutes: number, sloMinutes: number): Exclude<NightSta
 }
 
 function dateRangeInclusive(start: IsoDate, end: IsoDate): IsoDate[] {
+  if (start > end) return [];
+
   const out: IsoDate[] = [];
   let cur: IsoDate = start;
   // NOTE: IsoDate is expected to be in ISO `YYYY-MM-DD` format, so lexicographic
@@ -86,8 +82,14 @@ export async function stats(req: HttpRequest, ctx: InvocationContext): Promise<H
   // Sleep replies on day D map to sleep_date D-1, so stats should end at yesterday.
   const endSleepDate = addDays(localDate, -1);
 
-  const burnSeriesStart = env.BURN_SERIES_START_DATE ?? "2026-02-20";
-  const startForBurn: IsoDate = burnSeriesStart as IsoDate;
+  const burnSeriesStartRaw = env.BURN_SERIES_START_DATE ?? "2026-02-20";
+  let startForBurn: IsoDate;
+  try {
+    startForBurn = toIsoDate(burnSeriesStartRaw);
+  } catch (err) {
+    ctx.error("Invalid BURN_SERIES_START_DATE; expected YYYY-MM-DD", { value: burnSeriesStartRaw, err });
+    return json(500, { error: "Internal Server Error" });
+  }
 
   let entries;
   try {
@@ -105,7 +107,6 @@ export async function stats(req: HttpRequest, ctx: InvocationContext): Promise<H
   const start7 = addDays(endSleepDate, -6);
 
   const window30 = dateRangeInclusive(start30, endSleepDate);
-  const window7 = dateRangeInclusive(start7, endSleepDate);
 
   const minutes30: number[] = [];
   const minutes7: number[] = [];

@@ -39,8 +39,8 @@
     "knownNights": 7
   },
   "statusHistory30": [
-    { "sleepDate": "2026-02-20", "status": "OK", "minutesSlept": 450 },
-    { "sleepDate": "2026-02-21", "status": "UNKNOWN", "minutesSlept": null }
+    { "sleepDate": "2026-02-19", "status": "UNKNOWN", "minutesSlept": null },
+    { "sleepDate": "2026-02-20", "status": "OK", "minutesSlept": 450 }
   ],
   "cumulativeBurnSeries": [
     { "sleepDate": "2026-02-20", "burn": 0, "cumulativeBurn": 0 }
