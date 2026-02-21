@@ -1,14 +1,9 @@
 import { app, type HttpRequest, type HttpResponseInit, type InvocationContext } from "@azure/functions";
 
-export async function health(_req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
-  ctx.info("Health check ping");
-  return {
-    status: 200,
-    headers: {
-      "content-type": "application/json"
-    },
-    body: JSON.stringify({ status: "ok" })
-  };
+import { json } from "./jobsShared";
+
+export async function health(_req: HttpRequest, _ctx: InvocationContext): Promise<HttpResponseInit> {
+  return json(200, { status: "ok" });
 }
 
 app.http("health", {

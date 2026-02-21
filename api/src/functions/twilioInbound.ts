@@ -16,29 +16,53 @@ type RateLimitResult = {
   retryAfterSeconds?: number;
 };
 
-const rateLimitBuckets = new Map<string, number[]>();
+type RateLimitBucket = {
+  timestamps: number[];
+  lastSeen: number;
+};
+
+const rateLimitBuckets = new Map<string, RateLimitBucket>();
+
+function parseEnvPositiveInt(value: string | undefined, defaultValue: number): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 1) {
+    return defaultValue;
+  }
+  return Math.floor(parsed);
+}
 
 function getRateLimitConfig(env: NodeJS.ProcessEnv): RateLimitConfig {
-  const windowSeconds = Math.max(1, Number(env.TWILIO_RATE_LIMIT_WINDOW_SECONDS ?? "60"));
-  const maxRequests = Math.max(1, Number(env.TWILIO_RATE_LIMIT_MAX ?? "5"));
+  const windowSeconds = parseEnvPositiveInt(env.TWILIO_RATE_LIMIT_WINDOW_SECONDS, 60);
+  const maxRequests = parseEnvPositiveInt(env.TWILIO_RATE_LIMIT_MAX, 5);
   return { windowSeconds, maxRequests };
+}
+
+function sweepRateLimitBuckets(cutoff: number) {
+  if (rateLimitBuckets.size < 1000) return;
+  for (const [key, bucket] of rateLimitBuckets.entries()) {
+    if (bucket.lastSeen < cutoff) {
+      rateLimitBuckets.delete(key);
+    }
+  }
 }
 
 function checkRateLimit(key: string, cfg: RateLimitConfig, now = Date.now()): RateLimitResult {
   const windowMs = cfg.windowSeconds * 1000;
-  const bucket = rateLimitBuckets.get(key) ?? [];
   const cutoff = now - windowMs;
-  const recent = bucket.filter((ts) => ts > cutoff);
+  const bucket = rateLimitBuckets.get(key) ?? { timestamps: [], lastSeen: now };
+  const recent = bucket.timestamps.filter((ts) => ts > cutoff);
 
   if (recent.length >= cfg.maxRequests) {
     const oldest = recent[0];
     const retryAfterSeconds = Math.ceil((oldest + windowMs - now) / 1000);
-    rateLimitBuckets.set(key, recent);
+    rateLimitBuckets.set(key, { timestamps: recent, lastSeen: now });
+    sweepRateLimitBuckets(cutoff);
     return { ok: false, remaining: 0, retryAfterSeconds };
   }
 
   recent.push(now);
-  rateLimitBuckets.set(key, recent);
+  rateLimitBuckets.set(key, { timestamps: recent, lastSeen: now });
+  sweepRateLimitBuckets(cutoff);
   return { ok: true, remaining: cfg.maxRequests - recent.length };
 }
 
@@ -134,11 +158,7 @@ export async function twilioInbound(req: HttpRequest, ctx: InvocationContext): P
       maxRequests: rateLimit.maxRequests,
       retryAfterSeconds: rate.retryAfterSeconds
     });
-    return {
-      status: 429,
-      headers: rate.retryAfterSeconds ? { "retry-after": String(rate.retryAfterSeconds) } : undefined,
-      body: "Too Many Requests"
-    };
+    return twimlMessage("Too many messages received. Please wait before sending another update.");
   }
 
   ctx.info("Twilio inbound received", {
