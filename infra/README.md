@@ -64,7 +64,7 @@ Create **two** Consumption Logic Apps in Azure Portal (or two workflows in a Sta
 - Trigger: **Recurrence**
   - Frequency: Day
   - Interval: 1
-  - Time zone: **Eastern Standard Time**
+  - Time zone: **(UTC-05:00) Eastern Time (US & Canada)**
   - At these hours: **9**
   - At these minutes: **0**
 - Action: **HTTP**
@@ -77,7 +77,7 @@ Create **two** Consumption Logic Apps in Azure Portal (or two workflows in a Sta
 - Trigger: **Recurrence**
   - Frequency: Day
   - Interval: 1
-  - Time zone: **Eastern Standard Time**
+  - Time zone: **(UTC-05:00) Eastern Time (US & Canada)**
   - At these hours: **18**
   - At these minutes: **0**
 - Action: **HTTP**
