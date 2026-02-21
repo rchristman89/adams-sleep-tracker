@@ -13,6 +13,45 @@
 - **Azure Static Web Apps** hosts the public site
 - **Azure Logic Apps** schedules prompts/reminders in ET
 
+## GET /api/stats (JSON shape)
+
+```json
+{
+  "generatedAtUtc": "2026-02-21T15:00:00.000Z",
+  "timezone": "America/New_York",
+  "sloMinutes": 420,
+  "endSleepDate": "2026-02-20",
+  "averages": {
+    "avgMinutes7": 410.5,
+    "avgMinutes30": 395.2
+  },
+  "percentiles30": {
+    "p50Minutes": 405,
+    "p90Minutes": 460
+  },
+  "incidents30": {
+    "incidents": 7,
+    "sev1": 1
+  },
+  "reliability7": {
+    "availability": 0.71,
+    "errorBudget": 0.29,
+    "knownNights": 7
+  },
+  "statusHistory30": [
+    { "sleepDate": "2026-02-20", "status": "OK", "minutesSlept": 450 },
+    { "sleepDate": "2026-02-21", "status": "UNKNOWN", "minutesSlept": null }
+  ],
+  "cumulativeBurnSeries": [
+    { "sleepDate": "2026-02-20", "burn": 0, "cumulativeBurn": 0 }
+  ]
+}
+```
+
+Notes:
+- `statusHistory30` includes **30 nights**, with `UNKNOWN` for missing days.
+- `cumulativeBurnSeries` starts at **2026-02-20** and increments `cumulativeBurn` by `1` for each night below SLO.
+
 ## Rules
 - Only input: sleep duration for last night
 - Schedule: 09:00 ET prompt; 18:00 ET reminder if no reply that day
