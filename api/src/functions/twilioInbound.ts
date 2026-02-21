@@ -95,6 +95,16 @@ function twimlMessage(message: string, status = 200): HttpResponseInit {
   };
 }
 
+function twimlEmpty(status = 200): HttpResponseInit {
+  return {
+    status,
+    headers: {
+      "content-type": "text/xml"
+    },
+    body: "<?xml version=\"1.0\" encoding=\"UTF-8\"?><Response/>"
+  };
+}
+
 function escapeXml(s: string): string {
   return s
     .replaceAll("&", "&amp;")
@@ -168,7 +178,7 @@ export async function twilioInbound(req: HttpRequest, ctx: InvocationContext): P
 
   if (normalizedExpectedFrom && normalizedFrom !== normalizedExpectedFrom) {
     ctx.warn("Twilio inbound rejected: unexpected from number", { from: normalizedFrom, messageSid });
-    return { status: 403, body: "Forbidden" };
+    return twimlEmpty();
   }
 
   const rateLimit = getRateLimitConfig(env);
