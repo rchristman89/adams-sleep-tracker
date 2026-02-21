@@ -50,7 +50,9 @@
 
 Notes:
 - `statusHistory30` includes **30 nights**, with `UNKNOWN` for missing days.
-- `cumulativeBurnSeries` starts at **2026-02-20** and increments `cumulativeBurn` by `1` for each night below SLO.
+- `incidents30.incidents` counts **nights** with any non-OK status (DEGRADED/MAJOR/SEV1), not distinct “incident objects”.
+- `percentiles30.p50Minutes` / `p90Minutes` may be `null` when there is no data in the 30d window yet.
+- `cumulativeBurnSeries` starts at **BURN_SERIES_START_DATE** (default `2026-02-20`) and increments `cumulativeBurn` by `1` for each **known** night below SLO; `UNKNOWN` nights are treated as burn `0`.
 
 ## Rules
 - Only input: sleep duration for last night

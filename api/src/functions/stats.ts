@@ -44,6 +44,8 @@ function statusForMinutes(minutes: number, sloMinutes: number): Exclude<NightSta
 function dateRangeInclusive(start: IsoDate, end: IsoDate): IsoDate[] {
   const out: IsoDate[] = [];
   let cur: IsoDate = start;
+  // NOTE: IsoDate is expected to be in ISO `YYYY-MM-DD` format, so lexicographic
+  // string comparison (`cur <= end`) is equivalent to chronological comparison.
   while (cur <= end) {
     out.push(cur);
     cur = addDays(cur, 1);
@@ -56,7 +58,18 @@ export async function stats(req: HttpRequest, ctx: InvocationContext): Promise<H
 
   const env = process.env;
   const tz = env.TIMEZONE ?? "America/New_York";
-  const sloMinutes = Number(env.SLO_MINUTES ?? "420");
+
+  const rawSloMinutes = env.SLO_MINUTES;
+  let sloMinutes: number;
+  if (rawSloMinutes === undefined) {
+    sloMinutes = 420;
+  } else {
+    sloMinutes = Number(rawSloMinutes);
+    if (!Number.isFinite(sloMinutes) || sloMinutes <= 0) {
+      ctx.error("Invalid SLO_MINUTES environment variable; expected positive number", { value: rawSloMinutes });
+      return json(500, { error: "Internal Server Error" });
+    }
+  }
 
   let sleepClient;
   try {
@@ -70,9 +83,11 @@ export async function stats(req: HttpRequest, ctx: InvocationContext): Promise<H
   const now = new Date();
   const nowUtc = now.toISOString();
   const localDate = isoDateInTimeZone(now, tz);
+  // Sleep replies on day D map to sleep_date D-1, so stats should end at yesterday.
   const endSleepDate = addDays(localDate, -1);
 
-  const startForBurn: IsoDate = "2026-02-20" as IsoDate;
+  const burnSeriesStart = env.BURN_SERIES_START_DATE ?? "2026-02-20";
+  const startForBurn: IsoDate = burnSeriesStart as IsoDate;
 
   let entries;
   try {
