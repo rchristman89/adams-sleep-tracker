@@ -36,11 +36,20 @@ export async function sendSms(params: {
     return { ok: false, error: "Failed to reach Twilio", details: err };
   }
 
-  let json: any = null;
+  let bodyText: string | undefined;
   try {
-    json = await resp.json();
+    bodyText = await resp.text();
   } catch {
-    // ignore
+    bodyText = undefined;
+  }
+
+  let json: any = null;
+  if (bodyText !== undefined) {
+    try {
+      json = JSON.parse(bodyText);
+    } catch {
+      // ignore parse errors; we'll fall back to raw text
+    }
   }
 
   if (!resp.ok) {
@@ -48,12 +57,12 @@ export async function sendSms(params: {
       ok: false,
       error: "Twilio send failed",
       status: resp.status,
-      details: json ?? (await resp.text().catch(() => undefined))
+      details: json ?? bodyText
     };
   }
 
   const sid = String(json?.sid ?? "");
-  if (!sid) return { ok: false, error: "Twilio response missing sid", details: json };
+  if (!sid) return { ok: false, error: "Twilio response missing sid", details: json ?? bodyText };
 
   return { ok: true, messageSid: sid };
 }

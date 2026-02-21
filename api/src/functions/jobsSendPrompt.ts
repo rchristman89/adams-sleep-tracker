@@ -5,7 +5,7 @@ import { sendSms } from "../twilio/sendSms";
 import { json, requireJobSecret } from "./jobsShared";
 
 export async function jobsSendPrompt(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
-  const auth = requireJobSecret(req, ctx);
+  const auth = await requireJobSecret(req, ctx);
   if (!auth.ok) return auth.resp;
 
   const env = process.env;
@@ -15,7 +15,7 @@ export async function jobsSendPrompt(req: HttpRequest, ctx: InvocationContext): 
   const to = env.ADAM_TO_NUMBER;
 
   const storageCs = env.AZURE_STORAGE_CONNECTION_STRING;
-  if (!accountSid || !authToken || !from || !to || !storageCs) {
+  if (!accountSid || !authToken || !from || !to) {
     ctx.error("sendPrompt misconfigured: missing required environment variables", {
       hasAccountSid: !!accountSid,
       hasAuthToken: !!authToken,
@@ -36,19 +36,21 @@ export async function jobsSendPrompt(req: HttpRequest, ctx: InvocationContext): 
   }
 
   // Best-effort audit logging.
-  try {
-    const cfg = getTableStorageConfigFromEnv(env);
-    const smsClient = getSmsEventsClient(cfg);
-    await insertSmsEvent(smsClient, {
-      messageSid: sent.messageSid,
-      direction: "outbound",
-      body: messageBody,
-      fromNumber: from,
-      toNumber: to,
-      timestampUtc: sentAtUtc
-    });
-  } catch (err) {
-    ctx.error("Failed to insert outbound SmsEvent (prompt)", { err, messageSid: sent.messageSid });
+  if (storageCs) {
+    try {
+      const cfg = getTableStorageConfigFromEnv(env);
+      const smsClient = getSmsEventsClient(cfg);
+      await insertSmsEvent(smsClient, {
+        messageSid: sent.messageSid,
+        direction: "outbound",
+        body: messageBody,
+        fromNumber: from,
+        toNumber: to,
+        timestampUtc: sentAtUtc
+      });
+    } catch (err) {
+      ctx.error("Failed to insert outbound SmsEvent (prompt)", { err, messageSid: sent.messageSid });
+    }
   }
 
   return json(200, { ok: true, messageSid: sent.messageSid });

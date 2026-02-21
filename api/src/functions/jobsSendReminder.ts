@@ -12,7 +12,7 @@ import { sendSms } from "../twilio/sendSms";
 import { json, requireJobSecret } from "./jobsShared";
 
 export async function jobsSendReminder(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
-  const auth = requireJobSecret(req, ctx);
+  const auth = await requireJobSecret(req, ctx);
   if (!auth.ok) return auth.resp;
 
   const env = process.env;
@@ -49,7 +49,14 @@ export async function jobsSendReminder(req: HttpRequest, ctx: InvocationContext)
   const now = new Date();
   const localDate = isoDateInTimeZone(now, tz);
 
-  const hasReply = await hasReplyOnLocalDate(sleepClient, localDate);
+  let hasReply: boolean;
+  try {
+    hasReply = await hasReplyOnLocalDate(sleepClient, localDate);
+  } catch (err) {
+    ctx.error("Failed to query Table Storage for reply on local date", { err, localDate });
+    return json(500, { error: "Internal Server Error" });
+  }
+
   if (hasReply) {
     return json(200, { ok: true, skipped: true, reason: "Already have reply for today", localDate });
   }

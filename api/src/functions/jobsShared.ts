@@ -10,7 +10,7 @@ export function json(status: number, body: unknown): HttpResponseInit {
   };
 }
 
-export function requireJobSecret(req: HttpRequest, ctx: InvocationContext): { ok: true } | { ok: false; resp: HttpResponseInit } {
+export async function requireJobSecret(req: HttpRequest, ctx: InvocationContext): Promise<{ ok: true } | { ok: false; resp: HttpResponseInit }> {
   const expected = process.env.JOB_SECRET;
   const got = req.headers.get("x-job-secret") ?? "";
 
@@ -19,7 +19,20 @@ export function requireJobSecret(req: HttpRequest, ctx: InvocationContext): { ok
     return { ok: false, resp: json(500, { error: "Internal Server Error" }) };
   }
 
-  if (!got || got !== expected) {
+  if (!got) {
+    return { ok: false, resp: json(403, { error: "Forbidden" }) };
+  }
+
+  // Constant-time comparison.
+  // If lengths differ, treat as forbidden (do not attempt timingSafeEqual).
+  const a = Buffer.from(got, "utf8");
+  const b = Buffer.from(expected, "utf8");
+  if (a.length !== b.length) {
+    return { ok: false, resp: json(403, { error: "Forbidden" }) };
+  }
+
+  const { timingSafeEqual } = await import("node:crypto");
+  if (!timingSafeEqual(a, b)) {
     return { ok: false, resp: json(403, { error: "Forbidden" }) };
   }
 
