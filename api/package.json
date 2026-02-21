@@ -1,0 +1,15 @@
+{
+  "name": "adams-sleep-tracker-api",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@azure/data-tables": "^13.3.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.5",
+    "typescript": "^5.9.3"
+  }
+}
