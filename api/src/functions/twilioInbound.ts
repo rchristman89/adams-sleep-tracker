@@ -23,6 +23,9 @@ type RateLimitBucket = {
 
 // Best-effort per-instance rate limiting (not shared across Azure Function instances).
 const rateLimitBuckets = new Map<string, RateLimitBucket>();
+const MIN_BUCKETS_FOR_SWEEP = 200;
+const MAX_SWEEP_INTERVAL_MS = 60_000;
+const MAX_BUCKETS = 10_000;
 let lastRateLimitSweepAt = 0;
 
 function parseEnvPositiveInt(value: string | undefined, defaultValue: number): number {
@@ -40,12 +43,23 @@ function getRateLimitConfig(env: NodeJS.ProcessEnv): RateLimitConfig {
 }
 
 function sweepRateLimitBuckets(cutoff: number, now: number, windowMs: number) {
-  if (rateLimitBuckets.size < 200) return;
-  if (now - lastRateLimitSweepAt < windowMs) return;
+  if (rateLimitBuckets.size < MIN_BUCKETS_FOR_SWEEP) return;
+  const sweepIntervalMs = Math.min(windowMs, MAX_SWEEP_INTERVAL_MS);
+  if (now - lastRateLimitSweepAt < sweepIntervalMs) return;
   lastRateLimitSweepAt = now;
   for (const [key, bucket] of rateLimitBuckets.entries()) {
     if (bucket.lastSeen < cutoff) {
       rateLimitBuckets.delete(key);
+    }
+  }
+
+  if (rateLimitBuckets.size > MAX_BUCKETS) {
+    const excess = rateLimitBuckets.size - MAX_BUCKETS;
+    const entries = Array.from(rateLimitBuckets.entries());
+    entries.sort((a, b) => a[1].lastSeen - b[1].lastSeen);
+    for (let i = 0; i < excess; i += 1) {
+      const [keyToDelete] = entries[i];
+      rateLimitBuckets.delete(keyToDelete);
     }
   }
 }
@@ -147,14 +161,14 @@ export async function twilioInbound(req: HttpRequest, ctx: InvocationContext): P
   }
 
   const normalizedFrom = from.trim();
-  if (normalizedExpectedFrom && normalizedFrom !== normalizedExpectedFrom) {
-    ctx.warn("Twilio inbound rejected: unexpected from number", { from: normalizedFrom, messageSid });
-    return { status: 403, body: "Forbidden" };
-  }
-
   if (!normalizedFrom) {
     ctx.warn("Twilio inbound rejected: missing from number", { messageSid });
     return { status: 400, body: "Bad Request" };
+  }
+
+  if (normalizedExpectedFrom && normalizedFrom !== normalizedExpectedFrom) {
+    ctx.warn("Twilio inbound rejected: unexpected from number", { from: normalizedFrom, messageSid });
+    return { status: 403, body: "Forbidden" };
   }
 
   const rateLimit = getRateLimitConfig(env);
