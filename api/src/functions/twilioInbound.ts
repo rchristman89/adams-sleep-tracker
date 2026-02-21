@@ -21,7 +21,9 @@ type RateLimitBucket = {
   lastSeen: number;
 };
 
+// Best-effort per-instance rate limiting (not shared across Azure Function instances).
 const rateLimitBuckets = new Map<string, RateLimitBucket>();
+let lastRateLimitSweepAt = 0;
 
 function parseEnvPositiveInt(value: string | undefined, defaultValue: number): number {
   const parsed = Number(value);
@@ -37,8 +39,10 @@ function getRateLimitConfig(env: NodeJS.ProcessEnv): RateLimitConfig {
   return { windowSeconds, maxRequests };
 }
 
-function sweepRateLimitBuckets(cutoff: number) {
-  if (rateLimitBuckets.size < 1000) return;
+function sweepRateLimitBuckets(cutoff: number, now: number, windowMs: number) {
+  if (rateLimitBuckets.size < 200) return;
+  if (now - lastRateLimitSweepAt < windowMs) return;
+  lastRateLimitSweepAt = now;
   for (const [key, bucket] of rateLimitBuckets.entries()) {
     if (bucket.lastSeen < cutoff) {
       rateLimitBuckets.delete(key);
@@ -56,13 +60,13 @@ function checkRateLimit(key: string, cfg: RateLimitConfig, now = Date.now()): Ra
     const oldest = recent[0];
     const retryAfterSeconds = Math.ceil((oldest + windowMs - now) / 1000);
     rateLimitBuckets.set(key, { timestamps: recent, lastSeen: now });
-    sweepRateLimitBuckets(cutoff);
+    sweepRateLimitBuckets(cutoff, now, windowMs);
     return { ok: false, remaining: 0, retryAfterSeconds };
   }
 
   recent.push(now);
   rateLimitBuckets.set(key, { timestamps: recent, lastSeen: now });
-  sweepRateLimitBuckets(cutoff);
+  sweepRateLimitBuckets(cutoff, now, windowMs);
   return { ok: true, remaining: cfg.maxRequests - recent.length };
 }
 
@@ -135,6 +139,7 @@ export async function twilioInbound(req: HttpRequest, ctx: InvocationContext): P
 
   const normalizedTo = to.trim();
   const normalizedExpectedTo = expectedTo.trim();
+  const normalizedExpectedFrom = expectedFrom?.trim();
 
   if (!normalizedTo || normalizedTo !== normalizedExpectedTo) {
     // Not our number.
@@ -142,13 +147,18 @@ export async function twilioInbound(req: HttpRequest, ctx: InvocationContext): P
   }
 
   const normalizedFrom = from.trim();
-  if (expectedFrom && normalizedFrom !== expectedFrom.trim()) {
+  if (normalizedExpectedFrom && normalizedFrom !== normalizedExpectedFrom) {
     ctx.warn("Twilio inbound rejected: unexpected from number", { from: normalizedFrom, messageSid });
     return { status: 403, body: "Forbidden" };
   }
 
+  if (!normalizedFrom) {
+    ctx.warn("Twilio inbound rejected: missing from number", { messageSid });
+    return { status: 400, body: "Bad Request" };
+  }
+
   const rateLimit = getRateLimitConfig(env);
-  const rateKey = normalizedFrom || "unknown";
+  const rateKey = normalizedFrom || messageSid || "unknown";
   const rate = checkRateLimit(rateKey, rateLimit);
   if (!rate.ok) {
     ctx.warn("Twilio inbound rate limited", {
