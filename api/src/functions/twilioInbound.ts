@@ -1,9 +1,9 @@
 import { app, type HttpRequest, type HttpResponseInit, type InvocationContext } from "@azure/functions";
 
-import { getSleepEntriesClient, getSmsEventsClient, getTableStorageConfigFromEnv, upsertSleepEntry, insertSmsEvent } from "../storage";
-import { addDays, isoDateInTimeZone } from "../shared/dates";
-import { parseSleep } from "../shared/parseSleep";
-import { verifyTwilioSignature } from "../twilio/verifyTwilio";
+import { getSleepEntriesClient, getSmsEventsClient, getTableStorageConfigFromEnv, upsertSleepEntry, insertSmsEvent } from "../storage/index.js";
+import { addDays, isoDateInTimeZone } from "../shared/dates.js";
+import { parseSleep } from "../shared/parseSleep.js";
+import { verifyTwilioSignature } from "../twilio/verifyTwilio.js";
 
 type RateLimitConfig = {
   windowSeconds: number;

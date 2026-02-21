@@ -1,8 +1,8 @@
 import { app, type HttpRequest, type HttpResponseInit, type InvocationContext } from "@azure/functions";
 
-import { getSmsEventsClient, getTableStorageConfigFromEnv, insertSmsEvent } from "../storage";
-import { sendSms } from "../twilio/sendSms";
-import { json, requireJobSecret } from "./jobsShared";
+import { getSmsEventsClient, getTableStorageConfigFromEnv, insertSmsEvent } from "../storage/index.js";
+import { sendSms } from "../twilio/sendSms.js";
+import { json, requireJobSecret } from "./jobsShared.js";
 
 export async function jobsSendPrompt(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
   const auth = await requireJobSecret(req, ctx);

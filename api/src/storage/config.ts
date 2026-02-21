@@ -1,4 +1,4 @@
-import type { TableStorageConfig } from "./tables";
+import type { TableStorageConfig } from "./tables.js";
 
 export function getTableStorageConfigFromEnv(env = process.env): TableStorageConfig {
   const cs = env.AZURE_STORAGE_CONNECTION_STRING;

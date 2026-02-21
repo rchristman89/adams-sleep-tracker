@@ -1,10 +1,10 @@
 import { app, type HttpRequest, type HttpResponseInit, type InvocationContext } from "@azure/functions";
 
-import { json } from "./jobsShared";
+import { json } from "./jobsShared.js";
 
-import { addDays, isoDateInTimeZone } from "../shared/dates";
-import { getSleepEntriesClient, getTableStorageConfigFromEnv, listSleepEntriesSince } from "../storage";
-import { toIsoDate, type IsoDate } from "../storage/types";
+import { addDays, isoDateInTimeZone } from "../shared/dates.js";
+import { getSleepEntriesClient, getTableStorageConfigFromEnv, listSleepEntriesSince } from "../storage/index.js";
+import { toIsoDate, type IsoDate } from "../storage/types.js";
 
 type NightStatus = "OK" | "DEGRADED" | "MAJOR" | "SEV1" | "UNKNOWN";
 

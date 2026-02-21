@@ -1,5 +1,5 @@
 import { TableClient, type TableEntityResult } from "@azure/data-tables";
-import { toIsoDate, type IsoDate, type SleepEntry, type SmsEvent } from "./types";
+import { toIsoDate, type IsoDate, type SleepEntry, type SmsEvent } from "./types.js";
 
 const SLEEP_PARTITION = "sleep";
 const SMS_PARTITION = "sms";

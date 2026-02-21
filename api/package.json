@@ -2,6 +2,7 @@
   "name": "adams-sleep-tracker-api",
   "private": true,
   "type": "module",
+  "main": "dist/functions/*.js",
   "scripts": {
     "build": "tsc -p tsconfig.json"
   },

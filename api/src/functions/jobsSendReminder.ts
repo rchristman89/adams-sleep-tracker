@@ -6,10 +6,10 @@ import {
   getTableStorageConfigFromEnv,
   hasReplyOnLocalDate,
   insertSmsEvent
-} from "../storage";
-import { isoDateInTimeZone } from "../shared/dates";
-import { sendSms } from "../twilio/sendSms";
-import { json, requireJobSecret } from "./jobsShared";
+} from "../storage/index.js";
+import { isoDateInTimeZone } from "../shared/dates.js";
+import { sendSms } from "../twilio/sendSms.js";
+import { json, requireJobSecret } from "./jobsShared.js";
 
 export async function jobsSendReminder(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
   const auth = await requireJobSecret(req, ctx);
