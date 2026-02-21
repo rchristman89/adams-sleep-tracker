@@ -47,6 +47,13 @@ gh save-me-copilot rchristman89/adams-sleep-tracker <pr_number>
 
 No silent resolutions.
 
+### 5a) Final Copilot re-review gate (required)
+If you push changes in response to Copilot feedback:
+- **Request Copilot re-review** again.
+- **Before merging**, explicitly acknowledge the final Copilot re-review outcome in the PR:
+  - If Copilot posts new comments → handle them (accept/deny + changes).
+  - If Copilot posts a review with **no new comments** → leave a short PR comment like: "Checked final Copilot re-review on <sha>; no new findings."
+
 ## 6) Wait for CI + Copilot review
 - Do **not** merge until GitHub Actions checks are green.
 - Do **not** merge until Copilot review is posted and all comments are handled (accept/deny + rationale).
@@ -61,7 +68,7 @@ Options:
 ## 7) Merge and close the loop
 - Merge PR (squash preferred unless noted).
 - Ensure the issue is closed (auto-close via PR "Fixes #<n>" is preferred).
-- Move to the next issue.
+- **Immediately start the next issue** in the MVP order (assign → branch comment → branch).
 
 ---
 
