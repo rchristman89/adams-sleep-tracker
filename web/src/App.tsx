@@ -34,8 +34,8 @@ type StatsResponse = {
     sev1: number
   }
   reliability7: {
-    availability: number
-    errorBudget: number
+    availability: number | null
+    errorBudget: number | null
     knownNights: number
   }
   statusHistory30: StatusEntry[]
@@ -190,15 +190,14 @@ function App() {
           <h2>Unable to load stats</h2>
           <p>
             We couldn&apos;t load the latest sleep statistics. This may be due to a
-            temporary issue with the service or a problem with your network connection.
+            temporary issue with the service or a problem with your network
+            connection.
           </p>
           <p>
-            Please check your internet connection and refresh this page. If the problem
-            continues, contact your administrator or support team.
+            Please check your internet connection and refresh this page. If the
+            problem continues, contact your administrator or support team.
           </p>
-          {error && (
-            <p className="error-details">Technical details: {error}</p>
-          )}
+          {error && <p className="error-details">Technical details: {error}</p>}
         </div>
       </div>
     )
@@ -207,17 +206,22 @@ function App() {
   const lastNightStatus = lastNight?.status ?? 'UNKNOWN'
 
   const barWidth = history.length ? CHART_WIDTH / history.length : CHART_WIDTH
-  const burnLinePoints = history.reduce<string[]>((points, entry, index) => {
-    const burn = burnByDate.get(entry.sleepDate)
-    if (burn == null) return points
-    const x = index * barWidth + barWidth / 2
-    const y =
-      CHART_BAR_AREA_HEIGHT -
-      (burn / maxBurn) * (CHART_BAR_AREA_HEIGHT - 10) +
-      20
-    points.push(`${x},${y}`)
-    return points
-  }, [])
+
+  const burnLinePoints = useMemo(
+    () =>
+      history.length
+        ? history.map((entry, index) => {
+            const burn = burnByDate.get(entry.sleepDate) ?? 0
+            const x = index * barWidth + barWidth / 2
+            const y =
+              CHART_BAR_AREA_HEIGHT -
+              (burn / maxBurn) * (CHART_BAR_AREA_HEIGHT - 10) +
+              20
+            return `${x},${y}`
+          })
+        : [],
+    [history, barWidth, burnByDate, maxBurn],
+  )
 
   return (
     <div className="page">
@@ -316,7 +320,7 @@ function App() {
 
       <section className="panel">
         <div className="panel-header">
-          <h2>Daily sleep & burn</h2>
+          <h2>Daily sleep &amp; burn</h2>
           <p className="muted">
             Bars show minutes slept. Line shows cumulative burn (below SLO).
           </p>
@@ -366,6 +370,8 @@ function App() {
                   width={width}
                   height={barHeight}
                   fill={STATUS_COLORS[entry.status]}
+                  stroke="rgba(15, 23, 42, 0.65)"
+                  strokeWidth="1"
                 />
               )
             })}
@@ -379,9 +385,8 @@ function App() {
             )}
           </svg>
           <p id="burn-chart-summary" className="sr-only">
-            Bar chart of minutes slept for each day in the last 30 days, with a line
-            showing cumulative burn versus the SLO. Missing burn data is omitted from
-            the line.
+            Bar chart of minutes slept for each day in the last 30 days, with a
+            line showing cumulative burn versus the SLO.
           </p>
           <div className="chart-footer">
             <span>SLO: {formatDuration(stats.sloMinutes)}</span>
@@ -409,7 +414,7 @@ function App() {
             </thead>
             <tbody>
               {incidentLog.map((entry) => (
-                <tr key={entry.sleepDate}>
+                <tr key={entry.sleepDate} tabIndex={0}>
                   <td>{formatDate(entry.sleepDate)}</td>
                   <td>
                     <span

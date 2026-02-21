@@ -117,13 +117,18 @@
 
 .history-bar {
   display: grid;
-  grid-template-columns: repeat(30, minmax(12px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(12px, 1fr));
   gap: 6px;
 }
 
 .history-item {
   height: 20px;
   border-radius: 4px;
+  outline: none;
+}
+
+.history-item:focus-visible {
+  box-shadow: 0 0 0 2px #0f172a, 0 0 0 4px rgba(56, 189, 248, 0.9);
 }
 
 .history-legend {
@@ -183,10 +188,11 @@
   display: inline-block;
   padding: 4px 10px;
   border-radius: 999px;
-  color: #0f172a;
+  color: #020617;
   font-weight: 600;
   font-size: 0.8rem;
   border: 1px solid rgba(15, 23, 42, 0.25);
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.15);
 }
 
 .error {
