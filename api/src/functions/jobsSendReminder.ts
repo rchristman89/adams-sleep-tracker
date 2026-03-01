@@ -8,7 +8,7 @@ import {
   insertSmsEvent
 } from "../storage/index.js";
 import { isoDateInTimeZone } from "../shared/dates.js";
-import { sendSms } from "../twilio/sendSms.js";
+import { sendSms, getSmsProvider } from "../sms/sendSms.js";
 import { json, requireJobSecret } from "./jobsShared.js";
 
 export async function jobsSendReminder(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
@@ -17,18 +17,12 @@ export async function jobsSendReminder(req: HttpRequest, ctx: InvocationContext)
 
   const env = process.env;
   const tz = env.TIMEZONE ?? "America/New_York";
+  const provider = getSmsProvider(env);
 
-  const accountSid = env.TWILIO_ACCOUNT_SID;
-  const authToken = env.TWILIO_AUTH_TOKEN;
-  const from = env.TWILIO_FROM_NUMBER;
   const to = env.ADAM_TO_NUMBER;
-
   const storageCs = env.AZURE_STORAGE_CONNECTION_STRING;
-  if (!accountSid || !authToken || !from || !to || !storageCs) {
+  if (!to || !storageCs) {
     ctx.error("sendReminder misconfigured: missing required environment variables", {
-      hasAccountSid: !!accountSid,
-      hasAuthToken: !!authToken,
-      hasFrom: !!from,
       hasTo: !!to,
       hasStorageConnectionString: !!storageCs
     });
@@ -64,11 +58,18 @@ export async function jobsSendReminder(req: HttpRequest, ctx: InvocationContext)
   const messageBody = "Reminder: please reply with how many hours you slept last night (e.g. 7.5 or 7:30).";
   const sentAtUtc = now.toISOString();
 
-  const sent = await sendSms({ accountSid, authToken, from, to, body: messageBody });
+  const sent = await sendSms({ provider, env, to, body: messageBody });
   if (!sent.ok) {
-    ctx.error("Twilio sendReminder failed", { status: sent.status, details: sent.details });
+    ctx.error("sendReminder failed", { provider, error: sent.error, status: sent.status, details: sent.details });
     return json(502, { error: "Bad Gateway" });
   }
+
+  const fromNumber =
+    provider === "azure-communication"
+      ? (env.ACS_FROM_NUMBER ?? "")
+      : provider === "infobip"
+        ? (env.INFOBIP_FROM ?? "")
+        : (env.TWILIO_FROM_NUMBER ?? "");
 
   // Best-effort audit logging.
   try {
@@ -76,7 +77,7 @@ export async function jobsSendReminder(req: HttpRequest, ctx: InvocationContext)
       messageSid: sent.messageSid,
       direction: "outbound",
       body: messageBody,
-      fromNumber: from,
+      fromNumber,
       toNumber: to,
       timestampUtc: sentAtUtc
     });
